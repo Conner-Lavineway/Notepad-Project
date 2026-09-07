@@ -1,4 +1,4 @@
-use eframe::{epaint::{Color32, FontId, text::{LayoutJob, TextFormat}}};
+use eframe::{egui::{Stroke}, epaint::{Color32, FontId, text::{LayoutJob, TextFormat}}};
 
 
 pub struct Reformatter {
@@ -11,6 +11,7 @@ pub struct Reformatter {
 pub struct Cache {
     pub text: String, 
     pub format: TextFormat,
+    pub marker: bool,
 }
 
 #[derive(Clone)]
@@ -102,65 +103,226 @@ impl Reformatter {
      * determines how a line should be formatted
      */
     fn format_line(line: &Line, color: Color32, default_font: FontId) -> Vec<Cache> {
-        let mut font: FontId = FontId::default();
-        let mut sections: Vec<Cache> = Vec::new();
+        let mut font: FontId = default_font.clone();
 
+        //start with default formatting 
+        let mut sections = vec![Cache {
+            text: line.text.clone(),
+            format: Self::standard(color, font.clone()),
+            marker: false,
+        }];
         //check if we are a header, change font size if we are
         if let Some(level) = Self::header_level(&line.text) {
             font = Self::header_font(&default_font, level);
+            sections = Self::format_header(sections, color, font.clone());
         }
 
         //Handle Italics
-        if let Some(mut italics) = Self::format_italics(&line.text, color, font.clone()) {
-            sections.append(&mut italics);
-        }
+        sections = Self::format_italics(sections, color, font.clone());
+        //Hanle Strikethrough
+        sections = Self::format_strikethrough(sections, color, font.clone());
 
-        //if no other formats are found we are a plain string
-        if sections.is_empty() {
-            sections.push(Cache {
-                text: line.text.clone(),
-                format: Self::standard(color, font.clone()),
-            });
-        }
+
+
+        Self::hide_markers(&mut sections, line, font.clone());
 
         sections
     }
     
     //handles inline italics formatting
-    fn format_italics(text: &str, color: Color32, font: FontId) -> Option<Vec<Cache>> {
-        let start = text.find('*')?; //is there a inline italic start
-        let end = text[start + 1..].find('*')?; //does the inline italic end
-        let end = start + 1 + end; //move end over one end * should also be italic
-
+    fn format_italics(original: Vec<Cache>, color: Color32, font: FontId) -> Vec<Cache> {
         let mut sections = Vec::new();
 
-        //if we are in the middle of the line make sure the text prior to italics is standard
-        if start > 0 {
-            sections.push(Cache {
-                text: text[..start].to_string(),
-                format: Self::standard(color, font.clone()),
-            });
-        }
+        for section in original {
+            let current_format = section.format;
 
-        //format inline italics
-        sections.push(Cache {
-            text: text[start..=end].to_string(),
-            format: Self::italics(color, font.clone()),
-        });
-
-        //check the rest of the line
-        if end + 1 < text.len() {
-            if let Some(mut extra_sections) = Self::format_italics(&text[end + 1..], color, font.clone()) {
-                sections.append(&mut extra_sections);
-            } else {
+            let Some(start) = section.text.find('*') else {
                 sections.push(Cache {
-                    text: text[end + 1..].to_string(),
-                    format: Self::standard(color, font.clone()),
+                    text: section.text,
+                    format: current_format,
+                    marker: section.marker,
                 });
+
+                continue;
+            };
+
+            let Some(relative_end) = section.text[start + 1..].find('*') else {
+                sections.push(Cache {
+                    text: section.text,
+                    format: current_format,
+                    marker: section.marker,
+                });
+
+                continue;
+            };
+
+            let end = start + 1 + relative_end; 
+
+    
+
+            //if we are in the middle of the line make sure the text prior to italics is standard
+            if start > 0 {
+                sections.push(Cache {
+                    text: section.text[..start].to_string(),
+                    format: current_format.clone(),
+                    marker: section.marker,
+                });
+            }
+
+            sections.push(Cache {
+                text: section.text[start..=start].to_string(),
+                format: Self::italics(color, font.clone()),
+                marker: true,
+            });
+
+            //format inline italics
+            sections.push(Cache {
+                text: section.text[start + 1..end].to_string(),
+                format: Self::italics(color, font.clone()),
+                marker: false,
+            });
+
+            sections.push(Cache {
+                text: section.text[end..=end].to_string(),
+                format: Self::italics(color, font.clone()),
+                marker: true,
+            });
+
+
+
+            //check the rest of the line
+            if end + 1 < section.text.len() {
+                let remaining = Cache {
+                    text: section.text[end + 1..].to_string(),
+                    format: current_format.clone(),
+                    marker: section.marker,
+                };
+                let remaining = vec![remaining];
+
+                let mut extra_sections = Self::format_italics(remaining, color, font.clone());
+                sections.append(&mut extra_sections);
+                
+            }
+        }
+        
+        sections
+    }
+
+    fn format_strikethrough(original: Vec<Cache>, color: Color32, font: FontId) -> Vec<Cache> {
+        let mut sections = Vec::new();
+
+        for section in original {
+            let current_format = section.format;
+
+            let Some(start) = section.text.find('~') else {
+                sections.push(Cache {
+                    text: section.text,
+                    format: current_format,
+                    marker: section.marker,
+                });
+
+                continue;
+            };
+
+            let Some(relative_end) = section.text[start + 1..].find('~') else {
+                sections.push(Cache {
+                    text: section.text,
+                    format: current_format,
+                    marker: section.marker,
+                });
+
+                continue;
+            };
+
+            let end = start + 1 + relative_end; 
+
+    
+
+            //if we are in the middle of the line make sure the text prior to italics is standard
+            if start > 0 {
+                sections.push(Cache {
+                    text: section.text[..start].to_string(),
+                    format: current_format.clone(),
+                    marker: section.marker,
+                });
+            }
+
+            sections.push(Cache {
+                text: section.text[start..=start].to_string(),
+                format: Self::strikethrough(color, font.clone()),
+                marker: true,
+            });
+
+            //format inline italics
+            sections.push(Cache {
+                text: section.text[start + 1..end].to_string(),
+                format: Self::strikethrough(color, font.clone()),
+                marker: false,
+            });
+
+            sections.push(Cache {
+                text: section.text[end..=end].to_string(),
+                format: Self::strikethrough(color, font.clone()),
+                marker: true,
+            });
+
+
+
+            //check the rest of the line
+            if end + 1 < section.text.len() {
+                let remaining = Cache {
+                    text: section.text[end + 1..].to_string(),
+                    format: current_format.clone(),
+                    marker: section.marker,
+                };
+                let remaining = vec![remaining];
+
+                let mut extra_sections = Self::format_italics(remaining, color, font.clone());
+                sections.append(&mut extra_sections);
+                
+            }
+        }
+        
+        sections
+    }
+
+    fn format_header(original: Vec<Cache>, color: Color32, font: FontId) -> Vec<Cache> {
+        let mut sections = Vec::new();
+
+        for section in original {
+            let current_format = section.format;
+            for (i, c) in section.text.chars().enumerate() {
+                if c == '#' {
+                    sections.push(Cache {
+                        text: c.to_string(),
+                        format: Self::standard(color, font.clone()),
+                        marker: true,
+                    });
+                } else {
+                    sections.push(Cache {
+                        text: section.text[i..].to_string(),
+                        format: Self::standard(color, font.clone()),
+                        marker: false,
+                    });
+                    return sections;
+                }
             }
         }
 
-        Some(sections)
+        sections
+    }
+
+
+    fn hide_markers(sections: &mut Vec<Cache>, line: &Line, font: FontId) {
+        if line.cursor {
+            return;
+        }
+        
+        for section in sections {
+            if section.marker {
+                section.format = Self::hidden(font.clone());
+            }
+        }
     }
 
     //determine header size
@@ -170,7 +332,10 @@ impl Reformatter {
         for c in text.chars() {
             if c == '#' {
                 level += 1;
+            } else  if c == ' ' {
+                break;
             } else {
+                level = 0;
                 break;
             }
         }
@@ -194,6 +359,14 @@ impl Reformatter {
 
         FontId::new(size, default_font.family.clone())
     }
+
+    fn hidden(font: FontId) -> TextFormat {
+        TextFormat {
+            color: Color32::TRANSPARENT,
+            font_id: font,
+            ..Default::default()
+        }
+    }
     
     //standard format getter
     fn standard(color: Color32, font: FontId) -> TextFormat {
@@ -209,6 +382,16 @@ impl Reformatter {
         TextFormat {
             color: color,
             italics: true,
+            font_id: font,
+            ..Default::default()
+        }
+    }
+
+    //strikethrough getter
+    fn strikethrough(color: Color32, font: FontId) -> TextFormat {
+        TextFormat {
+            color: color,
+            strikethrough: Stroke::new(2.0, color),
             font_id: font,
             ..Default::default()
         }
