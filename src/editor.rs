@@ -1,14 +1,20 @@
-use eframe::egui::{self, Color32};
+use crate::markdownreformatter::Reformatter;
+use eframe::egui::{self, Color32, FontId, FontFamily};
 use std::path::PathBuf;
+
+
 
 
 static PIXEL_POINT: f32 = 1.5; //Default textsize
 static BACKGROUND_COLOR: Color32 = Color32::from_rgb(27, 27, 27);
 static DEFAULT_ROWS: usize = 24; //starting rows of text editor, affects size of editing area
+static FONT_STYLE: FontId = FontId::new(12.0, FontFamily::Proportional);
+static FONT_COLOR: Color32 = Color32::WHITE;
+
 
 pub struct TextEditor {
     notepad: String,
-    renderer: String,
+    reformatter: Reformatter,
     file_path: Option<PathBuf>,
     status: String,
 }
@@ -17,7 +23,7 @@ impl Default for TextEditor {
     fn default() -> Self {
         Self {
             notepad: String::new(), 
-            renderer: String::new(), 
+            reformatter: Reformatter::new(),
             file_path: None,
             status: "Ready".to_string(),
         }
@@ -128,29 +134,48 @@ impl eframe::App for TextEditor {
                 );
             });
         });
-
-
-        //main text editor
         egui::CentralPanel::default().show(ctx, |ui| {
+
+            //text edit render control
+            let mut render_layer = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                if self.reformatter.needs_reformat(text) {
+                    self.reformatter.reformat(text, FONT_COLOR, FONT_STYLE.clone());
+                }
+                let mut job = self.reformatter.formatted().clone();
+                job.wrap.max_width = wrap_width;
+                ui.fonts(|fonts| {
+                    fonts.layout_job(job)
+                })
+            };
+            
+
+            //main text editor
+
+            let _output = egui::TextEdit::multiline(&mut self.notepad)
+            .desired_width(f32::INFINITY)
+            .desired_rows(DEFAULT_ROWS)
+            .background_color(BACKGROUND_COLOR)
+            .layouter(&mut render_layer)
+            .show(ui);  
+      
+
+
+            /* 
             egui::ScrollArea::vertical().show(ui,|ui| {
                 ui.add(
                     egui::TextEdit::multiline(&mut self.notepad)
                         .desired_width(f32::INFINITY)
                         .desired_rows(DEFAULT_ROWS)
-                        .font(egui::TextStyle::Monospace)
+                        .text_color(FONT_COLOR)
+                        .font(FONT_STYLE.clone())
                         .background_color(BACKGROUND_COLOR),
                 );
+                //ui.label(Reformatter::reformat(self.notepad.to_string(), FONT_COLOR));
             });
         });
+        */
 
-        
-        egui::SidePanel::right("Render").show(ctx, |ui| {
-            egui::Frame::default()
-                    .fill(egui::Color32::WHITE)
-                    .show(ui, |ui| {
-                        ui.label(egui::RichText::new(&self.renderer)
-                            .color(egui::Color32::BLACK));
-                    });
         });
+
     }
 }

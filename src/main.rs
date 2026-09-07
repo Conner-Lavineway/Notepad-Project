@@ -1,5 +1,5 @@
 mod editor;
-
+mod markdownreformatter;
 use editor::TextEditor;
 
 fn main() -> eframe::Result {
