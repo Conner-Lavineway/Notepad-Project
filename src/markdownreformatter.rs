@@ -1,4 +1,4 @@
-use eframe::{egui::{Stroke}, epaint::{Color32, FontId, text::{LayoutJob, TextFormat}}};
+use eframe::{egui::Stroke, epaint::{Color32, FontId, text::{LayoutJob, TextFormat}}};
 
 
 pub struct Reformatter {
@@ -12,18 +12,20 @@ pub struct Cache {
     pub text: String, 
     pub format: TextFormat,
     pub marker: bool,
+    pub cursor: bool,
+    pub group: usize
 }
 
 #[derive(Clone)]
 pub struct Line {
     pub text: String, 
     pub cached: bool, // if false run reformatter on this line, otherwise ignore
-    pub cursor: bool, // is the cursor on this line
     pub sections: Vec<Cache>,
 }
 
 
 impl Reformatter {
+
     pub fn new() -> Self {
         Self {
             cache: Vec::new(),
@@ -44,8 +46,43 @@ impl Reformatter {
             }
         }
 
-        self.commit_format();
+        self.commit_format(color);
     }
+
+    pub fn set_cursor_pos(&mut self, pos: usize, color: Color32) {
+        let mut current_range = 0;
+
+        for line in &mut self.cache {
+            let line_start = current_range;
+            let line_end = line_start + line.text.chars().count();
+
+            if pos >= line_start && pos <= line_end {
+                let section_start = line_start;
+                let mut cursor_group = 0;
+
+                for section in &mut line.sections {
+                    let section_end = section_start + section.text.chars().count();
+
+                    if pos >= section_start && pos <= section_end {
+                        cursor_group = section.group;
+                        break;
+                    }
+                }
+                for section in &mut line.sections {
+                    section.cursor = cursor_group != 0 && section.group == cursor_group;
+                }
+            } else {
+                for section in &mut line.sections {
+                    section.cursor = false;
+                }
+            }
+
+            current_range = line_end + 1;
+        }
+
+        self.commit_format(color);
+    }
+    
 
     /*
      * break_to_lines
@@ -67,16 +104,15 @@ impl Reformatter {
 
         for (current, line) in text.lines().enumerate() {
             if current < self.cache.len() {
-                let old: Line = self.cache[current].clone();
+                let mut old: Line = self.cache[current].clone();
 
                 if old.text == line {
+                    old.cached = true;
                     line_cache.push(old.clone());
-                    line_cache[current].cached = true;
                 } else {
                     line_cache.push(Line {
                         text: line.to_string(),
                         cached: false,
-                        cursor: false,
                         sections: Vec::new(),
                     });
                 }
@@ -84,9 +120,7 @@ impl Reformatter {
                 line_cache.push(Line {
                     text: line.to_string(),
                     cached: false,
-                    cursor: false,
                     sections: Vec::new(),
-
                 });
             }
         }
@@ -104,33 +138,35 @@ impl Reformatter {
      */
     fn format_line(line: &Line, color: Color32, default_font: FontId) -> Vec<Cache> {
         let mut font: FontId = default_font.clone();
+        let mut group = 0;
 
         //start with default formatting 
         let mut sections = vec![Cache {
             text: line.text.clone(),
             format: Self::standard(color, font.clone()),
             marker: false,
+            cursor: false,
+            group: 0
         }];
         //check if we are a header, change font size if we are
         if let Some(level) = Self::header_level(&line.text) {
             font = Self::header_font(&default_font, level);
-            sections = Self::format_header(sections, color, font.clone());
+            sections = Self::format_header(sections, &mut group, color, font.clone());
         }
 
+
         //Handle Italics
-        sections = Self::format_italics(sections, color, font.clone());
+        sections = Self::format_italics(sections, &mut group, color, font.clone());
         //Hanle Strikethrough
-        sections = Self::format_strikethrough(sections, color, font.clone());
+        sections = Self::format_strikethrough(sections, &mut group, color, font.clone());
 
-
-
-        Self::hide_markers(&mut sections, line, font.clone());
+        Self::hide_markers(&mut sections, font.clone());
 
         sections
     }
     
     //handles inline italics formatting
-    fn format_italics(original: Vec<Cache>, color: Color32, font: FontId) -> Vec<Cache> {
+    fn format_italics(original: Vec<Cache>, group: &mut usize, color: Color32, font: FontId) -> Vec<Cache> {
         let mut sections = Vec::new();
 
         for section in original {
@@ -141,6 +177,8 @@ impl Reformatter {
                     text: section.text,
                     format: current_format,
                     marker: section.marker,
+                    cursor: section.cursor,
+                    group: section.group,
                 });
 
                 continue;
@@ -151,6 +189,8 @@ impl Reformatter {
                     text: section.text,
                     format: current_format,
                     marker: section.marker,
+                    cursor: section.cursor,
+                    group: section.group,
                 });
 
                 continue;
@@ -166,13 +206,20 @@ impl Reformatter {
                     text: section.text[..start].to_string(),
                     format: current_format.clone(),
                     marker: section.marker,
+                    cursor: section.cursor,
+                    group: section.group,
                 });
             }
+
+            *group += 1;
+            let current_group = *group;
 
             sections.push(Cache {
                 text: section.text[start..=start].to_string(),
                 format: Self::italics(color, font.clone()),
                 marker: true,
+                cursor: section.cursor,
+                group: current_group,
             });
 
             //format inline italics
@@ -180,12 +227,16 @@ impl Reformatter {
                 text: section.text[start + 1..end].to_string(),
                 format: Self::italics(color, font.clone()),
                 marker: false,
+                cursor: section.cursor,
+                group: current_group,
             });
 
             sections.push(Cache {
                 text: section.text[end..=end].to_string(),
                 format: Self::italics(color, font.clone()),
                 marker: true,
+                cursor: section.cursor,
+                group: current_group,
             });
 
 
@@ -196,10 +247,12 @@ impl Reformatter {
                     text: section.text[end + 1..].to_string(),
                     format: current_format.clone(),
                     marker: section.marker,
+                    cursor: section.cursor,
+                    group: section.group
                 };
                 let remaining = vec![remaining];
 
-                let mut extra_sections = Self::format_italics(remaining, color, font.clone());
+                let mut extra_sections = Self::format_italics(remaining, group, color, font.clone());
                 sections.append(&mut extra_sections);
                 
             }
@@ -208,7 +261,7 @@ impl Reformatter {
         sections
     }
 
-    fn format_strikethrough(original: Vec<Cache>, color: Color32, font: FontId) -> Vec<Cache> {
+    fn format_strikethrough(original: Vec<Cache>, group: &mut usize, color: Color32, font: FontId) -> Vec<Cache> {
         let mut sections = Vec::new();
 
         for section in original {
@@ -219,6 +272,8 @@ impl Reformatter {
                     text: section.text,
                     format: current_format,
                     marker: section.marker,
+                    cursor: section.cursor,
+                    group: section.group,
                 });
 
                 continue;
@@ -229,6 +284,8 @@ impl Reformatter {
                     text: section.text,
                     format: current_format,
                     marker: section.marker,
+                    cursor: section.cursor,
+                    group: section.group,
                 });
 
                 continue;
@@ -244,26 +301,37 @@ impl Reformatter {
                     text: section.text[..start].to_string(),
                     format: current_format.clone(),
                     marker: section.marker,
+                    cursor: section.cursor,
+                    group: section.group,
                 });
             }
+
+            *group += 1;
+            let current_group = *group;
 
             sections.push(Cache {
                 text: section.text[start..=start].to_string(),
                 format: Self::strikethrough(color, font.clone()),
                 marker: true,
+                cursor: section.cursor,
+                group: current_group,
             });
-
+            
             //format inline italics
             sections.push(Cache {
                 text: section.text[start + 1..end].to_string(),
                 format: Self::strikethrough(color, font.clone()),
                 marker: false,
+                cursor: section.cursor,
+                group: current_group,
             });
-
+            
             sections.push(Cache {
                 text: section.text[end..=end].to_string(),
                 format: Self::strikethrough(color, font.clone()),
                 marker: true,
+                cursor: section.cursor,
+                group: current_group,
             });
 
 
@@ -274,10 +342,12 @@ impl Reformatter {
                     text: section.text[end + 1..].to_string(),
                     format: current_format.clone(),
                     marker: section.marker,
+                    cursor: section.cursor,
+                    group: section.group
                 };
                 let remaining = vec![remaining];
 
-                let mut extra_sections = Self::format_italics(remaining, color, font.clone());
+                let mut extra_sections = Self::format_strikethrough(remaining, group, color, font.clone());
                 sections.append(&mut extra_sections);
                 
             }
@@ -286,23 +356,29 @@ impl Reformatter {
         sections
     }
 
-    fn format_header(original: Vec<Cache>, color: Color32, font: FontId) -> Vec<Cache> {
+    fn format_header(original: Vec<Cache>, group: &mut usize, color: Color32, font: FontId) -> Vec<Cache> {
         let mut sections = Vec::new();
 
         for section in original {
-            let current_format = section.format;
+            *group += 1;
+            let current_group = *group;
+
             for (i, c) in section.text.chars().enumerate() {
                 if c == '#' {
                     sections.push(Cache {
                         text: c.to_string(),
                         format: Self::standard(color, font.clone()),
                         marker: true,
+                        cursor: section.cursor,
+                        group: current_group,
                     });
                 } else {
                     sections.push(Cache {
                         text: section.text[i..].to_string(),
                         format: Self::standard(color, font.clone()),
                         marker: false,
+                        cursor: section.cursor,
+                        group: current_group,
                     });
                     return sections;
                 }
@@ -313,13 +389,10 @@ impl Reformatter {
     }
 
 
-    fn hide_markers(sections: &mut Vec<Cache>, line: &Line, font: FontId) {
-        if line.cursor {
-            return;
-        }
+    fn hide_markers(sections: &mut Vec<Cache>, font: FontId) {
         
         for section in sections {
-            if section.marker {
+            if section.marker && !section.cursor {
                 section.format = Self::hidden(font.clone());
             }
         }
@@ -391,23 +464,30 @@ impl Reformatter {
     fn strikethrough(color: Color32, font: FontId) -> TextFormat {
         TextFormat {
             color: color,
-            strikethrough: Stroke::new(2.0, color),
+            strikethrough: Stroke::new(2.0_f32, color),
             font_id: font,
             ..Default::default()
         }
     }
 
     //join the formats of each line into one and set it as the current format
-    fn commit_format(&mut self)
+    fn commit_format(&mut self, color: Color32)
     {
         self.current_format = LayoutJob::default();
 
         for (i, line) in self.cache.iter().enumerate() {
             for section in &line.sections {
+                let format: TextFormat;
+                if section.cursor {
+                    format = Self::standard(color, section.format.font_id.clone());
+                } else {
+                    format = section.format.clone();
+                }
+
                 self.current_format.append(
                     &section.text, 
                     0.0, 
-                    section.format.clone(),
+                    format,
                 );
             }
 

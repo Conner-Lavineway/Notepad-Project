@@ -1,5 +1,5 @@
 use crate::markdownreformatter::Reformatter;
-use eframe::egui::{self, Color32, FontId, FontFamily};
+use eframe::egui::{self, Color32, FontFamily, FontId};
 use std::path::PathBuf;
 
 
@@ -138,27 +138,38 @@ impl eframe::App for TextEditor {
         egui::CentralPanel::default().show(ctx, |ui| {
 
             //text edit render control
-            let mut render_layer = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-                if self.reformatter.needs_reformat(text) {
-                    self.reformatter.reformat(text, FONT_COLOR, FONT_STYLE.clone());
-                }
-                let mut job = self.reformatter.formatted().clone();
-                job.wrap.max_width = wrap_width;
-                ui.fonts(|fonts| {
-                    fonts.layout_job(job)
-                })
-            };
-            
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                let output = {
+                    let mut render_layer = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                        if self.reformatter.needs_reformat(text) {
+                            self.reformatter.reformat(
+                                text,
+                                FONT_COLOR,
+                                FONT_STYLE.clone(),
+                            );
+                        }
 
-            //main text editor
-            egui::ScrollArea::vertical().show(ui,|ui| {
-                ui.add(
+                        let mut job = self.reformatter.formatted().clone();
+                        job.wrap.max_width = wrap_width;
+
+                        ui.fonts(|fonts| {
+                            fonts.layout_job(job)
+                        })
+                    };
+
                     egui::TextEdit::multiline(&mut self.notepad)
-                    .desired_width(f32::INFINITY)
-                    .desired_rows(DEFAULT_ROWS)
-                    .background_color(BACKGROUND_COLOR)
-                    .layouter(&mut render_layer)
-                );
+                        .desired_width(f32::INFINITY)
+                        .desired_rows(DEFAULT_ROWS)
+                        .background_color(BACKGROUND_COLOR)
+                        .layouter(&mut render_layer)
+                        .show(ui)
+                };
+
+                if let Some(cursor_range) = output.cursor_range {
+                    let cursor_position = cursor_range.primary.ccursor.index;
+
+                    self.reformatter.set_cursor_pos(cursor_position, FONT_COLOR);
+                }
             });
 
         });
