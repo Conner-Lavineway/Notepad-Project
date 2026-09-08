@@ -134,6 +134,7 @@ impl eframe::App for TextEditor {
                 );
             });
         });
+        
         egui::CentralPanel::default().show(ctx, |ui| {
 
             //text edit render control
@@ -150,30 +151,15 @@ impl eframe::App for TextEditor {
             
 
             //main text editor
-
-            let _output = egui::TextEdit::multiline(&mut self.notepad)
-            .desired_width(f32::INFINITY)
-            .desired_rows(DEFAULT_ROWS)
-            .background_color(BACKGROUND_COLOR)
-            .layouter(&mut render_layer)
-            .show(ui);  
-      
-
-
-            /* 
             egui::ScrollArea::vertical().show(ui,|ui| {
                 ui.add(
                     egui::TextEdit::multiline(&mut self.notepad)
-                        .desired_width(f32::INFINITY)
-                        .desired_rows(DEFAULT_ROWS)
-                        .text_color(FONT_COLOR)
-                        .font(FONT_STYLE.clone())
-                        .background_color(BACKGROUND_COLOR),
+                    .desired_width(f32::INFINITY)
+                    .desired_rows(DEFAULT_ROWS)
+                    .background_color(BACKGROUND_COLOR)
+                    .layouter(&mut render_layer)
                 );
-                //ui.label(Reformatter::reformat(self.notepad.to_string(), FONT_COLOR));
             });
-        });
-        */
 
         });
 
