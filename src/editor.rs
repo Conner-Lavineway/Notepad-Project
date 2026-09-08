@@ -1,6 +1,6 @@
 use crate::markdownreformatter::Reformatter;
-use eframe::egui::{self, Color32, FontFamily, FontId};
-use std::path::PathBuf;
+use eframe::egui::{self, Color32, FontFamily, FontId, Galley, TextureHandle};
+use std::{collections::HashMap, path::PathBuf};
 
 
 
@@ -17,6 +17,7 @@ pub struct TextEditor {
     reformatter: Reformatter,
     file_path: Option<PathBuf>,
     status: String,
+    image_cache: HashMap<String, (TextureHandle, egui::Vec2)>,
 }
 
 impl Default for TextEditor {
@@ -26,6 +27,7 @@ impl Default for TextEditor {
             reformatter: Reformatter::new(),
             file_path: None,
             status: "Ready".to_string(),
+            image_cache: HashMap::new(),
         }
     }
 }
@@ -84,11 +86,70 @@ impl TextEditor {
         self.file_path = None;
         self.status = "New File".to_string();
     }
+
+
+    fn load_image(&mut self, ctx: &egui::Context, path: &str) -> Option<(TextureHandle, egui::Vec2)> {
+        if let Some(tex) = self.image_cache.get(path) {
+            return Some(tex.clone());
+        }
+        let img = image::open(path).ok()?.to_rgba8();
+        let (w, h) = img.dimensions();
+
+        let color_image = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &img);
+        let tex = ctx.load_texture(path, color_image, egui::TextureOptions::default());
+        let size = egui::vec2(w as f32, h as f32);
+        self.image_cache.insert(path.to_string(), (tex.clone(), size));
+        Some((tex, size))
+    }
+
+    fn find_row(galley: &Galley, target_line: usize) -> Option<usize> {
+        let mut current_line = 0;
+
+        for (row_index, row) in galley.rows.iter().enumerate() {
+            if current_line == target_line {
+                return Some(row_index);
+            }
+            if row.ends_with_newline {
+                current_line += 1;
+            }
+        }
+
+        None
+    }
+
+    fn get_image_paths(text: &str) -> Vec<String> {
+        let mut paths = Vec::new();
+        let mut rest = text;
+
+        while let Some(bracket) = rest.find("![") {
+            let after_bracket = &rest[&bracket+2 ..];
+            let Some(bracket_end) = after_bracket.find("]") else { break; };
+            let after_bracket = &after_bracket[bracket_end + 1..];
+
+            if after_bracket.starts_with('(') {
+                if let Some(paren_end) = after_bracket.find(')') {
+                    paths.push(after_bracket[1..paren_end].to_string());
+                    rest = &after_bracket[paren_end + 1..];
+                    continue;
+                }
+            }                 
+            rest = after_bracket;
+
+        }
+
+        paths
+    }
 }
 
 impl eframe::App for TextEditor {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.set_pixels_per_point(PIXEL_POINT);
+
+        for path in Self::get_image_paths(&self.notepad) {
+            if let Some((_, size)) = self.load_image(ctx, &path) {
+                self.reformatter.set_image_size(&path, size);
+            }
+        }
 
         egui::TopBottomPanel::top("ToolBar").show(ctx, |ui|{
             ui.horizontal(|ui| {
@@ -165,6 +226,31 @@ impl eframe::App for TextEditor {
                         .show(ui)
                 };
 
+                let galley_pos = output.text_clip_rect.min;
+                
+                for(line, path) in self.reformatter.image_lines() {
+                    let Some(row_index) = Self::find_row(&output.galley, line) else {continue;};
+                    let row = &output.galley.rows[row_index];
+
+                    if let Some((texture, size)) = self.load_image(ctx, &path) {
+                        let scale = (crate::markdownreformatter::MAX_IMAGE_WIDTH / size.x).min(1.0);
+                        let display_size = size * scale;
+
+                        let rect = egui::Rect::from_min_size(
+                            galley_pos + row.rect.min.to_vec2(), 
+                            display_size,
+                        );
+
+                        ui.painter().image(
+                            texture.id(), 
+                            rect, 
+                            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), 
+                            Color32::WHITE
+                        );
+                    }
+                }
+
+
                 if let Some(cursor_range) = output.cursor_range {
                     let cursor_position = cursor_range.primary.ccursor.index;
 
@@ -175,4 +261,6 @@ impl eframe::App for TextEditor {
         });
 
     }
+
+
 }
