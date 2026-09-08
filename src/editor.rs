@@ -168,7 +168,7 @@ impl eframe::App for TextEditor {
                 if let Some(cursor_range) = output.cursor_range {
                     let cursor_position = cursor_range.primary.ccursor.index;
 
-                    self.reformatter.set_cursor_pos(cursor_position, FONT_COLOR);
+                    self.reformatter.set_cursor_pos(cursor_position, FONT_COLOR, FONT_STYLE.clone());
                 }
             });
 

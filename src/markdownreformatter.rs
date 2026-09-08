@@ -46,10 +46,10 @@ impl Reformatter {
             }
         }
 
-        self.commit_format(color);
+        self.commit_format(color, font);
     }
 
-    pub fn set_cursor_pos(&mut self, pos: usize, color: Color32) {
+    pub fn set_cursor_pos(&mut self, pos: usize, color: Color32, font: FontId) {
         let mut current_range = 0;
 
         for line in &mut self.cache {
@@ -80,7 +80,7 @@ impl Reformatter {
             current_range = line_end + 1;
         }
 
-        self.commit_format(color);
+        self.commit_format(color, font);
     }
     
 
@@ -160,8 +160,6 @@ impl Reformatter {
         //Hanle Strikethrough
         sections = Self::format_strikethrough(sections, &mut group, color, font.clone());
 
-        Self::hide_markers(&mut sections, font.clone());
-
         sections
     }
     
@@ -216,7 +214,7 @@ impl Reformatter {
 
             sections.push(Cache {
                 text: section.text[start..=start].to_string(),
-                format: Self::italics(color, font.clone()),
+                format: Self::italics(current_format.clone(), color, font.clone()),
                 marker: true,
                 cursor: section.cursor,
                 group: current_group,
@@ -225,7 +223,7 @@ impl Reformatter {
             //format inline italics
             sections.push(Cache {
                 text: section.text[start + 1..end].to_string(),
-                format: Self::italics(color, font.clone()),
+                format: Self::italics(current_format.clone(), color, font.clone()),
                 marker: false,
                 cursor: section.cursor,
                 group: current_group,
@@ -233,7 +231,7 @@ impl Reformatter {
 
             sections.push(Cache {
                 text: section.text[end..=end].to_string(),
-                format: Self::italics(color, font.clone()),
+                format: Self::italics(current_format.clone(), color, font.clone()),
                 marker: true,
                 cursor: section.cursor,
                 group: current_group,
@@ -267,7 +265,7 @@ impl Reformatter {
         for section in original {
             let current_format = section.format;
 
-            let Some(start) = section.text.find('~') else {
+            let Some(start) = section.text.find("~~") else {
                 sections.push(Cache {
                     text: section.text,
                     format: current_format,
@@ -279,7 +277,7 @@ impl Reformatter {
                 continue;
             };
 
-            let Some(relative_end) = section.text[start + 1..].find('~') else {
+            let Some(relative_end) = section.text[start + 2..].find("~~") else {
                 sections.push(Cache {
                     text: section.text,
                     format: current_format,
@@ -291,7 +289,7 @@ impl Reformatter {
                 continue;
             };
 
-            let end = start + 1 + relative_end; 
+            let end = start + 2 + relative_end; 
 
     
 
@@ -310,8 +308,8 @@ impl Reformatter {
             let current_group = *group;
 
             sections.push(Cache {
-                text: section.text[start..=start].to_string(),
-                format: Self::strikethrough(color, font.clone()),
+                text: section.text[start..=start + 1].to_string(),
+                format: Self::strikethrough(current_format.clone(), color, font.clone()),
                 marker: true,
                 cursor: section.cursor,
                 group: current_group,
@@ -319,16 +317,16 @@ impl Reformatter {
             
             //format inline italics
             sections.push(Cache {
-                text: section.text[start + 1..end].to_string(),
-                format: Self::strikethrough(color, font.clone()),
+                text: section.text[start + 2..end].to_string(),
+                format: Self::strikethrough(current_format.clone(), color, font.clone()),
                 marker: false,
                 cursor: section.cursor,
                 group: current_group,
             });
             
             sections.push(Cache {
-                text: section.text[end..=end].to_string(),
-                format: Self::strikethrough(color, font.clone()),
+                text: section.text[end..=end + 1].to_string(),
+                format: Self::strikethrough(current_format.clone(), color, font.clone()),
                 marker: true,
                 cursor: section.cursor,
                 group: current_group,
@@ -337,9 +335,9 @@ impl Reformatter {
 
 
             //check the rest of the line
-            if end + 1 < section.text.len() {
+            if end + 2 < section.text.len() {
                 let remaining = Cache {
-                    text: section.text[end + 1..].to_string(),
+                    text: section.text[end + 2..].to_string(),
                     format: current_format.clone(),
                     marker: section.marker,
                     cursor: section.cursor,
@@ -363,7 +361,9 @@ impl Reformatter {
             *group += 1;
             let current_group = *group;
 
-            for (i, c) in section.text.chars().enumerate() {
+            let mut char_indices = section.text.char_indices();
+
+            while let Some((i, c)) = char_indices.next() {
                 if c == '#' {
                     sections.push(Cache {
                         text: c.to_string(),
@@ -372,6 +372,26 @@ impl Reformatter {
                         cursor: section.cursor,
                         group: current_group,
                     });
+                } else if c == ' ' {
+                    sections.push(Cache {
+                        text: c.to_string(),
+                        format: Self::standard(color, font.clone()),
+                        marker: true,
+                        cursor: section.cursor,
+                        group: current_group,
+                    });
+
+                    let rest_start = i + c.len_utf8();
+                    if rest_start < section.text.len() {
+                        sections.push(Cache {
+                            text: section.text[rest_start..].to_string(),
+                            format: Self::standard(color, font.clone()),
+                            marker: false,
+                            cursor: section.cursor,
+                            group: current_group,
+                        });
+                    }
+                    return sections;
                 } else {
                     sections.push(Cache {
                         text: section.text[i..].to_string(),
@@ -386,16 +406,6 @@ impl Reformatter {
         }
 
         sections
-    }
-
-
-    fn hide_markers(sections: &mut Vec<Cache>, font: FontId) {
-        
-        for section in sections {
-            if section.marker && !section.cursor {
-                section.format = Self::hidden(font.clone());
-            }
-        }
     }
 
     //determine header size
@@ -432,15 +442,7 @@ impl Reformatter {
 
         FontId::new(size, default_font.family.clone())
     }
-
-    fn hidden(font: FontId) -> TextFormat {
-        TextFormat {
-            color: Color32::TRANSPARENT,
-            font_id: font,
-            ..Default::default()
-        }
-    }
-    
+   
     //standard format getter
     fn standard(color: Color32, font: FontId) -> TextFormat {
         TextFormat {
@@ -451,35 +453,44 @@ impl Reformatter {
     }
     
     //italic format getter
-    fn italics(color: Color32, font: FontId) -> TextFormat {
+    fn italics(old: TextFormat, color: Color32, font: FontId) -> TextFormat {
         TextFormat {
             color: color,
             italics: true,
             font_id: font,
-            ..Default::default()
+            ..old
         }
     }
 
     //strikethrough getter
-    fn strikethrough(color: Color32, font: FontId) -> TextFormat {
+    fn strikethrough(old: TextFormat, color: Color32, font: FontId) -> TextFormat {
         TextFormat {
             color: color,
             strikethrough: Stroke::new(2.0_f32, color),
             font_id: font,
-            ..Default::default()
+            ..old
         }
     }
 
     //join the formats of each line into one and set it as the current format
-    fn commit_format(&mut self, color: Color32)
-    {
+    fn commit_format(&mut self, color: Color32, font: FontId) {
         self.current_format = LayoutJob::default();
 
         for (i, line) in self.cache.iter().enumerate() {
             for section in &line.sections {
                 let format: TextFormat;
                 if section.cursor {
-                    format = Self::standard(color, section.format.font_id.clone());
+                    format = Self::standard(color, FontId { 
+                        size: f64::max(font.size.into(), 
+                        section.format.font_id.size.into()) as f32, 
+                        family: font.clone().family
+                    });
+                } else if section.marker {
+                    format = TextFormat {
+                        color: color,
+                        font_id: FontId::new(0.0, section.format.font_id.family.clone()),
+                        ..Default::default()
+                    }
                 } else {
                     format = section.format.clone();
                 }
