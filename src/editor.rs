@@ -1,5 +1,5 @@
 use crate::markdownreformatter::Reformatter;
-use eframe::egui::{self, Color32, FontFamily, FontId, Galley, TextureHandle};
+use eframe::egui::{self, Color32, FontFamily, FontId, Galley, Key, KeyboardShortcut, Modifiers, TextureHandle};
 use std::{collections::HashMap, path::PathBuf};
 
 
@@ -7,7 +7,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 static PIXEL_POINT: f32 = 1.5; //Default textsize
 static BACKGROUND_COLOR: Color32 = Color32::from_rgb(27, 27, 27);
-static DEFAULT_ROWS: usize = 100; //starting rows of text editor, affects size of editing area
+static DEFAULT_ROWS: usize = 10; //starting rows of text editor, affects size of editing area
 static FONT_STYLE: FontId = FontId::new(12.0, FontFamily::Proportional);
 static FONT_COLOR: Color32 = Color32::WHITE;
 
@@ -257,7 +257,19 @@ impl eframe::App for TextEditor {
                     self.reformatter.set_cursor_pos(cursor_position, FONT_COLOR, FONT_STYLE.clone());
                 }
             });
-
+            
+            if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL | Modifiers::SHIFT, Key::S))) {
+                self.save_file_as();
+            }
+            if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::S))) {
+                self.save_file();
+            }
+            if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::O))) {
+                self.open_file();
+            }
+            if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::N))) {
+                self.new_file();
+            }
         });
 
     }
