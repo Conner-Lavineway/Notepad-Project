@@ -5,9 +5,9 @@ use std::{collections::HashMap, path::PathBuf};
 
 
 
-static PIXEL_POINT: f32 = 1.5; //Default textsize
-static BACKGROUND_COLOR: Color32 = Color32::from_rgb(27, 27, 27);
-static DEFAULT_ROWS: usize = 10; //starting rows of text editor, affects size of editing area
+const PIXEL_POINT: f32 = 1.5; //Default textsize
+const BACKGROUND_COLOR: Color32 = Color32::from_rgb(27, 27, 27);
+const DEFAULT_ROWS: usize = 10; //starting rows of text editor, affects size of editing area
 static FONT_STYLE: FontId = FontId::new(12.0, FontFamily::Proportional);
 static FONT_COLOR: Color32 = Color32::WHITE;
 

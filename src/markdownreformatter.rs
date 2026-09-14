@@ -1,8 +1,10 @@
 use std::collections::HashMap;
-
+use std::sync::Mutex;
 use eframe::{egui::Stroke, epaint::{Vec2, Color32, FontId, text::{LayoutJob, TextFormat}}};
 
-pub static MAX_IMAGE_WIDTH: f32 = 600.0;
+pub const MAX_IMAGE_WIDTH: f32 = 600.0;
+
+static UPDATE_INDENT: Mutex<f32> = Mutex::new(0.0);
 
 pub struct Reformatter {
     cache: Vec<Line>,
@@ -28,6 +30,7 @@ pub struct Line {
     pub text: String, 
     pub cached: bool, // if false run reformatter on this line, otherwise ignore
     pub sections: Vec<Cache>,
+    pub indent: i32,
 }
 
 
@@ -120,8 +123,8 @@ impl Reformatter {
         let mut line_cache: Vec<Line> = Vec::new();
 
         for (current, line) in text.lines().enumerate() {
+            let mut old: Line = self.cache[current].clone();
             if current < self.cache.len() {
-                let mut old: Line = self.cache[current].clone();
 
                 if old.text == line {
                     old.cached = true;
@@ -131,6 +134,7 @@ impl Reformatter {
                         text: line.to_string(),
                         cached: false,
                         sections: Vec::new(),
+                        indent: old.indent,
                     });
                 }
             } else {
@@ -138,6 +142,7 @@ impl Reformatter {
                     text: line.to_string(),
                     cached: false,
                     sections: Vec::new(),
+                    indent: old.indent,
                 });
             }
         }
@@ -647,8 +652,8 @@ impl Reformatter {
         self.current_format = LayoutJob::default();
 
         for (i, line) in self.cache.iter().enumerate() {
-            for section in &line.sections {
-                let format: TextFormat;
+            for (section_index, section) in line.sections.iter().enumerate() {
+                let mut format: TextFormat;
                 if section.cursor {
                     format = Self::standard(color, FontId { 
                         size: f64::max(font.size.into(), 
@@ -676,6 +681,11 @@ impl Reformatter {
                     }
                 } else {
                     format = section.format.clone();
+                }
+
+                if section.cursor {
+                    format.extra_letter_spacing += UPDATE_INDENT.lock().unwrap();
+                    Self::decrement_indent();
                 }
 
                 self.current_format.append(
@@ -719,6 +729,13 @@ impl Reformatter {
                     .map(|path| (i, path))
             })
             .collect()
+    }
+
+    pub fn increment_indent() {
+        *UPDATE_INDENT.lock().unwrap() += 1.0;
+    }
+    pub fn decrement_indent() {
+        *UPDATE_INDENT.lock().unwrap() -= 1.0;
     }
 
 }
