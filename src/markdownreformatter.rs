@@ -4,7 +4,6 @@ use eframe::{egui::Stroke, epaint::{Vec2, Color32, FontId, text::{LayoutJob, Tex
 
 pub static MAX_IMAGE_WIDTH: f32 = 600.0;
 static HIDDEN_MARKER_SIZE: f32 = 0.01;
-static DEFAULT_FONT_SIZE: f32 = 12.0;
 
 pub struct Reformatter {
     cache: Vec<Line>,
@@ -654,11 +653,8 @@ impl Reformatter {
                 if section.cursor {
                     format = Self::standard(color, FontId { 
                         size: f32::max(
-                            DEFAULT_FONT_SIZE,
-                            f32::max(
                                 font.size, 
-                                section.format.font_id.size)
-                            ), 
+                                section.format.font_id.size), 
                         family: font.clone().family
                     });
                 } else if let Some(path) = &section.image {
