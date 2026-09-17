@@ -5,9 +5,9 @@ use std::{collections::HashMap, path::PathBuf};
 
 
 
-static PIXEL_POINT: f32 = 1.5; //Default textsize
-static BACKGROUND_COLOR: Color32 = Color32::from_rgb(27, 27, 27);
-static DEFAULT_ROWS: usize = 100; //starting rows of text editor, affects size of editing area
+const PIXEL_POINT: f32 = 1.5; //Default textsize
+const BACKGROUND_COLOR: Color32 = Color32::from_rgb(27, 27, 27);
+const DEFAULT_ROWS: usize = 100; //starting rows of text editor, affects size of editing area
 static FONT_STYLE: FontId = FontId::new(12.0, FontFamily::Proportional);
 static FONT_COLOR: Color32 = Color32::WHITE;
 
@@ -88,7 +88,7 @@ impl TextEditor {
     }
 
 
-    fn load_image(&mut self, ctx: &egui::Context, path: &str) -> Option<(TextureHandle, egui::Vec2)> {
+    fn load_image(&mut self, ui: &mut egui::Ui, path: &str) -> Option<(TextureHandle, egui::Vec2)> {
         if let Some(tex) = self.image_cache.get(path) {
             return Some(tex.clone());
         }
@@ -96,7 +96,7 @@ impl TextEditor {
         let (w, h) = img.dimensions();
 
         let color_image = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &img);
-        let tex = ctx.load_texture(path, color_image, egui::TextureOptions::default());
+        let tex = ui.ctx().load_texture(path, color_image, egui::TextureOptions::default());
         let size = egui::vec2(w as f32, h as f32);
         self.image_cache.insert(path.to_string(), (tex.clone(), size));
         Some((tex, size))
@@ -142,16 +142,16 @@ impl TextEditor {
 }
 
 impl eframe::App for TextEditor {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        ctx.set_pixels_per_point(PIXEL_POINT);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        ui.ctx().set_pixels_per_point(PIXEL_POINT);
 
         for path in Self::get_image_paths(&self.notepad) {
-            if let Some((_, size)) = self.load_image(ctx, &path) {
+            if let Some((_, size)) = self.load_image(ui, &path) {
                 self.reformatter.set_image_size(&path, size);
             }
         }
 
-        egui::TopBottomPanel::top("ToolBar").show(ctx, |ui|{
+        egui::Panel::top("ToolBar").show(ui, |ui|{
             ui.horizontal(|ui| {
                 if ui.button("New").clicked() {
                     self.new_file();
@@ -184,7 +184,7 @@ impl eframe::App for TextEditor {
             });
         });
 
-        egui::TopBottomPanel::bottom("Status").show(ctx, |ui| {
+        egui::Panel::bottom("Status").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(&self.status);
                     ui.with_layout(
@@ -196,12 +196,16 @@ impl eframe::App for TextEditor {
             });
         });
         
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
+            //let tab_pressed = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab));
 
             //text edit render control
             egui::ScrollArea::vertical().show(ui, |ui| {
+
                 let output = {
-                    let mut render_layer = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+                    let mut render_layer = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                        let text = text.as_str();
+
                         if self.reformatter.needs_reformat(text) {
                             self.reformatter.reformat(
                                 text,
@@ -213,7 +217,7 @@ impl eframe::App for TextEditor {
                         let mut job = self.reformatter.formatted().clone();
                         job.wrap.max_width = wrap_width;
 
-                        ui.fonts(|fonts| {
+                        ui.fonts_mut(|fonts| {
                             fonts.layout_job(job)
                         })
                     };
@@ -232,12 +236,12 @@ impl eframe::App for TextEditor {
                     let Some(row_index) = Self::find_row(&output.galley, line) else {continue;};
                     let row = &output.galley.rows[row_index];
 
-                    if let Some((texture, size)) = self.load_image(ctx, &path) {
+                    if let Some((texture, size)) = self.load_image(ui, &path) {
                         let scale = (crate::markdownreformatter::MAX_IMAGE_WIDTH / size.x).min(1.0);
                         let display_size = size * scale;
 
                         let rect = egui::Rect::from_min_size(
-                            galley_pos + row.rect.min.to_vec2(), 
+                            galley_pos + row.rect().min.to_vec2(), 
                             display_size,
                         );
 
@@ -250,26 +254,46 @@ impl eframe::App for TextEditor {
                     }
                 }
 
+                let cursor_position = output.
+                    cursor_range.
+                    map(|range| range.primary.index.0);
 
-                if let Some(cursor_range) = output.cursor_range {
-                    let cursor_position = cursor_range.primary.ccursor.index;
+                /*if tab_pressed {
+                    if let Some(cursor_position) = cursor_position {
+                        let byte_position = self.notepad
+                            .char_indices()
+                            .nth(cursor_position)
+                            .map(|(index, _)| index)
+                            .unwrap_or(self.notepad.len());
 
-                    self.reformatter.set_cursor_pos(cursor_position, FONT_COLOR, FONT_STYLE.clone());
+                        self.notepad.insert(byte_position, '\t');
+                    }
+                }*/
+
+                if let Some(cursor_range) = cursor_position {
+
+                    self.reformatter.set_cursor_pos(cursor_range, FONT_COLOR, FONT_STYLE.clone());
+
                 }
-            });
             
-            if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL | Modifiers::SHIFT, Key::S))) {
-                self.save_file_as();
-            }
-            if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::S))) {
-                self.save_file();
-            }
-            if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::O))) {
-                self.open_file();
-            }
-            if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::N))) {
-                self.new_file();
-            }
+                
+                if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL | Modifiers::SHIFT, Key::S))) {
+                    self.save_file_as();
+                }
+                if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::S))) {
+                    self.save_file();
+                }
+                if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::O))) {
+                    self.open_file();
+                }
+                if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::N))) {
+                    self.new_file();
+                }
+                if ui.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::CTRL, Key::N))) {
+                    self.new_file();
+                }
+
+            });
         });
 
     }

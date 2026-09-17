@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use eframe::{egui::Stroke, epaint::{Vec2, Color32, FontId, text::{LayoutJob, TextFormat}}};
 
 pub static MAX_IMAGE_WIDTH: f32 = 600.0;
+static HIDDEN_MARKER_SIZE: f32 = 0.01;
 
 pub struct Reformatter {
     cache: Vec<Line>,
@@ -671,7 +672,7 @@ impl Reformatter {
                 } else if section.marker {
                     format = TextFormat {
                         color: color,
-                        font_id: FontId::new(0.0, section.format.font_id.family.clone()),
+                        font_id: FontId::new(HIDDEN_MARKER_SIZE, section.format.font_id.family.clone()),
                         ..Default::default()
                     }
                 } else {
