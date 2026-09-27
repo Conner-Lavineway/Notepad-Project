@@ -5,11 +5,12 @@ use std::{collections::HashMap, path::PathBuf};
 
 
 
-const PIXEL_POINT: f32 = 1.5; //Default textsize
 const BACKGROUND_COLOR: Color32 = Color32::from_rgb(27, 27, 27);
 const DEFAULT_ROWS: usize = 100; //starting rows of text editor, affects size of editing area
 static FONT_STYLE: FontId = FontId::new(12.0, FontFamily::Proportional);
 static FONT_COLOR: Color32 = Color32::WHITE;
+static X_SCROLL: f32 = 0.0;
+static Y_SCROLL: f32 = 2.25;
 
 
 pub struct TextEditor {
@@ -143,11 +144,13 @@ impl TextEditor {
 
 impl eframe::App for TextEditor {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        ui.ctx().set_pixels_per_point(PIXEL_POINT);
+        //dbg!(ui.ctx().repaint_causes());
 
-        for path in Self::get_image_paths(&self.notepad) {
-            if let Some((_, size)) = self.load_image(ui, &path) {
-                self.reformatter.set_image_size(&path, size);
+        if self.reformatter.needs_reformat(&self.notepad) {
+            for path in Self::get_image_paths(&self.notepad) {
+                if let Some((_, size)) = self.load_image(ui, &path) {
+                    self.reformatter.set_image_size(&path, size);
+                }
             }
         }
 
@@ -200,7 +203,9 @@ impl eframe::App for TextEditor {
             //let tab_pressed = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab));
 
             //text edit render control
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::ScrollArea::new([false, true])
+            .wheel_scroll_multiplier(egui::Vec2 {x: X_SCROLL, y: Y_SCROLL})
+            .show(ui, |ui| {
 
                 let output = {
                     let mut render_layer = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
